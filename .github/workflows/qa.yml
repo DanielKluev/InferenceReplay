@@ -22,7 +22,7 @@ jobs:
         pip install -e ".[dev]"
 
     - name: Running tests with pytest (xdist loadscope)
-      run: pytest -n auto --dist loadscope
+      run: pytest -n 0
 
     - name: Analyzing the main package with pylint
       run: pylint --fail-under=9 src/inference_gate || true
