@@ -36,6 +36,38 @@ REQUEST_COUNT = 100
 WALL_CLOCK_BUDGET_S = 2.0
 
 
+def test_default_mode_serves_or_records_performance_prompts(inference_gate_url: str) -> None:
+    """
+    Exercise the throughput prompts without forcing replay mode before the performance replay loop.
+
+    Record-mode runs can use this test to recreate the two production cassettes before the throughput
+    assertion pins every request to replay mode with ``X-InferenceGate-Control-Mode: replay``.
+    """
+    parsed = urllib.parse.urlparse(inference_gate_url)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+    headers = {
+        "Content-Type": "application/json",
+        "Connection": "keep-alive",
+    }
+
+    try:
+        for prompt in PROMPTS:
+            body = json.dumps({
+                "model": CASSETTE_MODEL,
+                "messages": [{
+                    "role": "user",
+                    "content": prompt
+                }],
+                "max_tokens": CASSETTE_MAX_TOKENS,
+            })
+            conn.request("POST", "/v1/chat/completions", body=body, headers=headers)
+            resp = conn.getresponse()
+            payload = resp.read()
+            assert resp.status == 200, f"status={resp.status} body={payload[:500]!r}"
+    finally:
+        conn.close()
+
+
 @pytest.mark.performance
 def test_replay_throughput_floor(inference_gate_url: str) -> None:
     """

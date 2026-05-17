@@ -41,16 +41,7 @@ from typing import Any, Generator
 
 import pytest
 
-# InferenceGlue is an optional peer dependency; when installed, the
-# match-policy fixture forwards X-InferenceGate-* headers via Glue's
-# request-context ContextVar so they reach the Gate over HTTP regardless
-# of single-process vs subprocess/xdist deployment.
-try:
-    from inference_glue.request_context import update_headers as _glue_update_headers  # type: ignore[import-not-found]
-    from inference_glue.request_context import reset_headers as _glue_reset_headers  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - exercised only when Glue is absent
-    _glue_update_headers = None  # type: ignore[assignment]
-    _glue_reset_headers = None  # type: ignore[assignment]
+from inference_gate import pytest_context
 
 log = logging.getLogger("InferenceGatePlugin")
 
@@ -115,6 +106,12 @@ _OPTION_DEFS: dict[str, dict[str, Any]] = {
         # their pytest timeout so a slow record does not silently abort.
         "default": "600",
     },
+    "max_live_requests": {
+        "cli": "--inferencegate-max-live-requests",
+        "env": "INFERENCEGATE_MAX_LIVE_REQUESTS",
+        "ini": "inferencegate_max_live_requests",
+        "default": None,
+    },
 }
 
 
@@ -171,6 +168,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
                     help="Sampling parameter fuzzy matching level: off, soft, or aggressive.")
     group.addoption("--inferencegate-max-non-greedy-replies", default=None, type=int,
                     help="Max replies to collect per non-greedy cassette before cycling (default: 5).")
+    group.addoption("--inferencegate-max-live-requests", default=None, type=int,
+                    help="Global limit on the number of live upstream requests per session (default: infinite).")
     group.addoption("--inferencegate-record-timeout", default=None, type=float,
                     help="Default upstream HTTP timeout in seconds used during recording (default: 600).")
 
@@ -181,6 +180,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini("inferencegate_fuzzy_model", default="", help="Enable fuzzy model matching (true/false).")
     parser.addini("inferencegate_fuzzy_sampling", default="", help="Sampling fuzzy matching level: off, soft, or aggressive.")
     parser.addini("inferencegate_max_non_greedy_replies", default="", help="Max replies per non-greedy cassette.")
+    parser.addini("inferencegate_max_live_requests", default="", help="Global limit on the number of live upstream requests.")
     parser.addini("inferencegate_record_timeout", default="", help="Default upstream HTTP timeout in seconds (record mode).")
 
 
@@ -340,6 +340,9 @@ class _SubprocessServer:
         max_replies = self.kwargs.get("max_non_greedy_replies")
         if max_replies is not None:
             cmd.extend(["--max-non-greedy-replies", str(max_replies)])
+        max_live_requests = self.kwargs.get("max_live_requests")
+        if max_live_requests is not None:
+            cmd.extend(["--max-live-requests", str(max_live_requests)])
         record_timeout = self.kwargs.get("record_timeout")
         if record_timeout is not None:
             cmd.extend(["--record-timeout", str(record_timeout)])
@@ -456,6 +459,8 @@ def _resolve_gate_kwargs(pytest_config: pytest.Config) -> dict[str, Any]:
     fuzzy_sampling = str(_resolve_option(pytest_config, "fuzzy_sampling") or "off")
     max_replies_raw = _resolve_option(pytest_config, "max_non_greedy_replies")
     max_non_greedy_replies = int(max_replies_raw) if max_replies_raw not in (None, "") else 5
+    max_live_raw = _resolve_option(pytest_config, "max_live_requests")
+    max_live_requests = int(max_live_raw) if max_live_raw not in (None, "") else None
     record_timeout_raw = _resolve_option(pytest_config, "record_timeout")
     record_timeout = float(record_timeout_raw) if record_timeout_raw not in (None, "") else 600.0
 
@@ -468,6 +473,7 @@ def _resolve_gate_kwargs(pytest_config: pytest.Config) -> dict[str, Any]:
         "fuzzy_model": fuzzy_model,
         "fuzzy_sampling": fuzzy_sampling,
         "max_non_greedy_replies": max_non_greedy_replies,
+        "max_live_requests": max_live_requests,
         "record_timeout": record_timeout,
     }
 
@@ -491,29 +497,12 @@ def inference_gate_url() -> str:
     return url
 
 
-@pytest.fixture(autouse=True)
-def _inferencegate_match_policy(request: pytest.FixtureRequest) -> Generator[None, None, None]:
+def _build_header_overrides(node: pytest.Item, worker_id: str) -> dict[str, str]:
     """
-    Apply per-test cassette matching overrides via header forwarding.
-
-    Two layers run in tandem:
-
-    1. **Marker translation** \u2014 ``@pytest.mark.inferencegate(fuzzy_model=...,
-       fuzzy_sampling=...)`` is translated into ``X-InferenceGate-Require-*``
-       headers pushed onto :mod:`inference_glue.request_context` (when Glue is
-       importable).  Headers travel with each HTTP request to the Gate so
-       this works uniformly under xdist.
-    2. **Test-identity metadata** \u2014 every test transparently pushes
-       ``X-InferenceGate-Metadata-Test-NodeID`` (the pytest nodeid) and
-       ``X-InferenceGate-Metadata-Worker-ID`` (the xdist worker name, or
-       ``"master"``) so recorded tapes carry provenance for free.
-
-    When InferenceGlue is not installed (e.g. Gate self-tests) this fixture
-    is a no-op: there is no in-process router to mutate in subprocess mode.
+    Build per-test InferenceGate headers from pytest metadata and markers.
     """
-    custom_marker = request.node.get_closest_marker("inferencegate")
+    custom_marker = node.get_closest_marker("inferencegate")
 
-    # Build header overrides from markers (regardless of transport mode).
     header_overrides: dict[str, str] = {}
     if custom_marker is not None:
         if "fuzzy_model" in custom_marker.kwargs:
@@ -521,17 +510,28 @@ def _inferencegate_match_policy(request: pytest.FixtureRequest) -> Generator[Non
             header_overrides["X-InferenceGate-Require-Fuzzy-Model"] = "on" if value else "off"
         if "fuzzy_sampling" in custom_marker.kwargs:
             header_overrides["X-InferenceGate-Require-Fuzzy-Sampling"] = str(custom_marker.kwargs["fuzzy_sampling"])
-    # Auto test-identity metadata.
-    header_overrides["X-InferenceGate-Metadata-Test-NodeID"] = request.node.nodeid
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
-    header_overrides["X-InferenceGate-Metadata-Worker-ID"] = worker_id
 
-    glue_token = None
-    if _glue_update_headers is not None:
-        glue_token = _glue_update_headers(header_overrides)
+    header_overrides["X-InferenceGate-Metadata-Test-NodeID"] = node.nodeid
+    header_overrides["X-InferenceGate-Metadata-Worker-ID"] = worker_id
+    return header_overrides
+
+
+@pytest.fixture(autouse=True)
+def _inferencegate_match_policy(request: pytest.FixtureRequest) -> Generator[None, None, None]:
+    """
+    Apply per-test cassette matching overrides via Gate-owned header context.
+
+    ``@pytest.mark.inferencegate(fuzzy_model=..., fuzzy_sampling=...)`` is
+    translated into ``X-InferenceGate-Require-*`` headers, and every test also
+    receives ``Metadata-Test-NodeID`` / ``Metadata-Worker-ID`` provenance.
+    Downstream clients that know about :mod:`inference_gate.pytest_context`
+    can attach these headers to their outbound HTTP requests.
+    """
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    header_overrides = _build_header_overrides(request.node, worker_id)
+    context_token = pytest_context.update_headers(header_overrides)
 
     try:
         yield
     finally:
-        if glue_token is not None and _glue_reset_headers is not None:
-            _glue_reset_headers(glue_token)
+        pytest_context.reset_headers(context_token)

@@ -79,6 +79,10 @@ asyncio_default_fixture_loop_scope = "function"
 # rely on the bundled cassettes for replay-only assertions; non-cassette tests
 # simply ignore the loaded cache.
 inferencegate_cache_dir = "tests/cassettes"
+# Keep in-tree record runs deterministic: these cassette-backed tests use prompts
+# without explicit temperature, so the router treats them as non-greedy. One reply
+# is enough for assertions and prevents seed tests from appending extra live calls.
+inferencegate_max_non_greedy_replies = "1"
 markers = [
     "performance: throughput / latency assertions; deselect with '-m \"not performance\"'",
 ]

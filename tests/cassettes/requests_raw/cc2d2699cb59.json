@@ -6,7 +6,7 @@
   "path": "/v1/chat/completions",
   "query_params": {},
   "headers": {
-    "Host": "127.0.0.1:1983",
+    "Host": "127.0.0.1:5545",
     "Accept-Encoding": "identity",
     "Content-Length": "218",
     "Content-Type": "application/json"

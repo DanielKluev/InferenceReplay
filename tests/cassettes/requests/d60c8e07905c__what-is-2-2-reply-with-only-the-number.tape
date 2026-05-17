@@ -9,27 +9,27 @@ max_tokens: 200
 stop_sequences: []
 tools: []
 logprobs: false
-recorded: '2026-05-11T15:54:50.137365Z'
+recorded: '2026-05-17T08:57:36.115573Z'
 replies: 1
-max_replies: 5
+max_replies: 1
 status_code: 200
-boundary: c66600
+boundary: cf544f
 sampling:
   is_greedy: false
 ---
---c66600 user
+--cf544f user
 
 What is 2+2? Reply with only the number.
---c66600 reply 1
-Response: 4d5d48107e7b.json
-Stream: 4d5d48107e7b.chunks.ndjson
+--cf544f reply 1
+Response: 6b58441440ae.json
+Stream: 6b58441440ae.chunks.ndjson
 Status: 200
 Stop-Reason: stop
-Input-Tokens: 20
-Output-Tokens: 1
+Input-Tokens: 67
+Output-Tokens: 42
 
 4
---c66600 reply 1 reasoning
+--cf544f reply 1 reasoning
 
-The user asks "What is 2+2? Reply with only the number." So answer "4".
---c66600--
+The user asks: "What is 2+2? Reply with only the number." So answer: 4. Only number, no extra text.
+--cf544f--

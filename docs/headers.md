@@ -51,7 +51,8 @@ The legacy `X-Gate-Reply-Strategy` is honoured as a deprecated alias for
 ### From InferenceGlue
 
 Glue auto-injects context headers on every outbound request via an httpx event
-hook. See `inference_glue.request_context`:
+hook. It also consumes the InferenceGate pytest plugin's header context when
+Gate is installed. See `inference_glue.request_context`:
 
 ```python
 from inference_glue.request_context import headers as glue_headers
@@ -64,12 +65,13 @@ Per-call `extra_headers=` always wins over context defaults.
 
 ### From the pytest plugin
 
-`@pytest.mark.inferencegate_strict` translates to
-`X-InferenceGate-Require-Exact: true`. The marker
+The pytest plugin stores per-test headers in `inference_gate.pytest_context`.
+Downstream clients such as InferenceGlue can read that context and attach the
+headers to outbound HTTP requests. The marker
 `@pytest.mark.inferencegate(fuzzy_model=False, fuzzy_sampling="off")`
-translates to `Require-Fuzzy-Model: off` /
-`Require-Fuzzy-Sampling: off`. Every test additionally pushes
-`Metadata-Test-NodeID` and `Metadata-Worker-ID` automatically.
+translates to `Require-Fuzzy-Model: off` / `Require-Fuzzy-Sampling: off`.
+Every test additionally pushes `Metadata-Test-NodeID` and
+`Metadata-Worker-ID` automatically.
 
 ## Behaviour on mismatch
 

@@ -122,13 +122,15 @@ def main(ctx: click.Context, config_path: str | None) -> None:
               help="Sampling parameter fuzzy matching: off (exact), soft (non-greedy matches non-greedy), aggressive (any match)")
 @click.option("--max-non-greedy-replies", default=None, type=int,
               help="Max replies to collect per non-greedy cassette before cycling (default: 5)")
+@click.option("--max-live-requests", default=None, type=int,
+              help="Global limit on the number of non-cassette upstream requests to perform per session")
 @click.option("--record-timeout", default=None, type=float,
               help="Default upstream HTTP timeout in seconds (used when an endpoint does not set its own timeout). Default: 600.0")
 @click.option("--verbose", "-v", is_flag=True, default=None, help="Enable verbose logging")
 @click.pass_context
 def start(ctx: click.Context, port: int | None, host: str | None, cache_dir: str | None, web_ui: bool, web_ui_port: int,
-          fuzzy_model: bool | None, fuzzy_sampling: str | None, max_non_greedy_replies: int | None, record_timeout: float | None,
-          verbose: bool | None) -> None:
+          fuzzy_model: bool | None, fuzzy_sampling: str | None, max_non_greedy_replies: int | None, max_live_requests: int | None,
+          record_timeout: float | None, verbose: bool | None) -> None:
     """
     Start in record-and-replay mode (default).
 
@@ -151,6 +153,7 @@ def start(ctx: click.Context, port: int | None, host: str | None, cache_dir: str
     actual_fuzzy_model = fuzzy_model if fuzzy_model is not None else config.fuzzy_model
     actual_fuzzy_sampling = fuzzy_sampling if fuzzy_sampling is not None else config.fuzzy_sampling
     actual_max_replies = max_non_greedy_replies if max_non_greedy_replies is not None else config.max_non_greedy_replies
+    actual_max_live_requests = max_live_requests if max_live_requests is not None else config.max_live_requests
     actual_record_timeout = record_timeout if record_timeout is not None else config.record_timeout
 
     setup_logging(actual_verbose)
@@ -158,8 +161,8 @@ def start(ctx: click.Context, port: int | None, host: str | None, cache_dir: str
     endpoints, models = _build_endpoints_and_models(config)
     gate = InferenceGate(host=actual_host, port=actual_port, mode=Mode.RECORD_AND_REPLAY, cache_dir=actual_cache_dir,
                          web_ui=web_ui, web_ui_port=web_ui_port, fuzzy_model=actual_fuzzy_model, fuzzy_sampling=actual_fuzzy_sampling,
-                         max_non_greedy_replies=actual_max_replies, record_timeout=actual_record_timeout, endpoints=endpoints,
-                         models=models)
+                         max_non_greedy_replies=actual_max_replies, max_live_requests=actual_max_live_requests,
+                         record_timeout=actual_record_timeout, endpoints=endpoints, models=models)
 
     click.echo("Starting InferenceGate in record-and-replay mode")
     click.echo(f"  Proxy: http://{actual_host}:{actual_port}")
@@ -172,6 +175,8 @@ def start(ctx: click.Context, port: int | None, host: str | None, cache_dir: str
     if actual_fuzzy_sampling != "off":
         click.echo(f"  Fuzzy sampling: {actual_fuzzy_sampling}")
     click.echo(f"  Max non-greedy replies: {actual_max_replies}")
+    if actual_max_live_requests is not None:
+        click.echo(f"  Max live requests: {actual_max_live_requests}")
     if web_ui:
         click.echo(f"  WebUI: http://127.0.0.1:{web_ui_port}")
 
@@ -243,6 +248,8 @@ def replay(ctx: click.Context, port: int | None, host: str | None, cache_dir: st
 @click.option("--fuzzy-sampling", default=None, type=click.Choice(["off", "soft", "aggressive"]),
               help="Sampling parameter fuzzy matching level.")
 @click.option("--max-non-greedy-replies", default=None, type=int, help="Max replies per non-greedy cassette before cycling.")
+@click.option("--max-live-requests", default=None, type=int,
+              help="Global limit on the number of non-cassette upstream requests to perform per session")
 @click.option("--record-timeout", default=None, type=float,
               help="Default upstream HTTP timeout in seconds.  Falls back to config.record_timeout (default: 600.0).  "
                    "Test harnesses should pass the same value as the pytest timeout so a slow recording does not silently abort.")
@@ -255,8 +262,8 @@ def replay(ctx: click.Context, port: int | None, host: str | None, cache_dir: st
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose logging.")
 @click.pass_context
 def serve(ctx: click.Context, mode: str, host: str, port: int, cache_dir: str | None, fuzzy_model: bool | None,
-          fuzzy_sampling: str | None, max_non_greedy_replies: int | None, record_timeout: float | None, print_url: bool,
-          parent_pid: int | None, verbose: bool) -> None:
+          fuzzy_sampling: str | None, max_non_greedy_replies: int | None, max_live_requests: int | None, record_timeout: float | None,
+          print_url: bool, parent_pid: int | None, verbose: bool) -> None:
     """
     Start a long-running InferenceGate server suitable for use as a subprocess.
 
@@ -281,6 +288,7 @@ def serve(ctx: click.Context, mode: str, host: str, port: int, cache_dir: str | 
     actual_fuzzy_model = fuzzy_model if fuzzy_model is not None else config.fuzzy_model
     actual_fuzzy_sampling = fuzzy_sampling if fuzzy_sampling is not None else config.fuzzy_sampling
     actual_max_replies = max_non_greedy_replies if max_non_greedy_replies is not None else config.max_non_greedy_replies
+    actual_max_live_requests = max_live_requests if max_live_requests is not None else config.max_live_requests
     actual_record_timeout = record_timeout if record_timeout is not None else config.record_timeout
 
     gate_mode = Mode.RECORD_AND_REPLAY if mode == "record" else Mode.REPLAY_ONLY
@@ -288,7 +296,8 @@ def serve(ctx: click.Context, mode: str, host: str, port: int, cache_dir: str | 
 
     gate = InferenceGate(host=host, port=port, mode=gate_mode, cache_dir=actual_cache_dir, fuzzy_model=actual_fuzzy_model,
                          fuzzy_sampling=actual_fuzzy_sampling, max_non_greedy_replies=actual_max_replies,
-                         record_timeout=actual_record_timeout, endpoints=endpoints, models=models)
+                         max_live_requests=actual_max_live_requests, record_timeout=actual_record_timeout,
+                         endpoints=endpoints, models=models)
 
     asyncio.run(_run_serve(gate, print_url=print_url, parent_pid=parent_pid))
 
@@ -518,20 +527,68 @@ def cassette_read(ctx: click.Context, cassette_id: str, cache_dir: str | None, r
 
 
 @cassette.command(name="delete")
-@click.argument("cassette_id")
+@click.argument("cassette_id", required=False)
+@click.option("--model", "-m", default=None, help="Delete all cassettes matching this model name (substring match)")
+@click.option("--non-200", is_flag=True, help="Delete all cassettes with a non-200 HTTP status code")
 @click.option("--cache-dir", "-c", default=None, help="Directory where cached responses are stored")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
-def cassette_delete(ctx: click.Context, cassette_id: str, cache_dir: str | None, yes: bool) -> None:
-    """Delete a single cassette by ID.
+def cassette_delete(ctx: click.Context, cassette_id: str | None, model: str | None, non_200: bool, cache_dir: str | None, yes: bool) -> None:
+    """Delete a single cassette by ID, all cassettes for a model, or all non-200 cassettes.
 
     CASSETTE_ID is the content hash (or unique prefix) of the cassette to delete.
-    Removes the tape file, associated response files, and updates the index.
+    Alternatively, use --model to delete all cassettes matching a model name, or
+    use --non-200 to delete all cassettes that recorded an error response.
+    Removes tape files, associated response files, and updates the index.
     """
     config = get_config(ctx)
     actual_cache_dir = cache_dir if cache_dir is not None else config.cache_dir
 
     storage = CacheStorage(actual_cache_dir)
+    
+    if not cassette_id and not model and not non_200:
+        click.echo("Error: Must provide either CASSETTE_ID, --model, or --non-200.", err=True)
+        ctx.exit(1)
+        return
+    if sum(bool(x) for x in [cassette_id, model, non_200]) > 1:
+        click.echo("Error: Cannot combine CASSETTE_ID, --model, and --non-200.", err=True)
+        ctx.exit(1)
+        return
+
+    if model or non_200:
+        if model:
+            rows = storage.filter_entries(model=model)
+            if not rows:
+                click.echo(f"No cassettes found matching model '{model}'.")
+                return
+            click.echo(f"Found {len(rows)} cassettes matching model '{model}':")
+        else:
+            rows = [r for r in storage.index._rows if r.status_code != 200]
+            if not rows:
+                click.echo("No cassettes found with non-200 status codes.")
+                return
+            click.echo(f"Found {len(rows)} cassettes with non-200 status codes:")
+            
+        models_found = {}
+        for row in rows:
+            models_found[row.model] = models_found.get(row.model, 0) + 1
+        for m, count in models_found.items():
+            click.echo(f"  - {m}: {count} cassette(s)")
+            
+        if not yes:
+            if not click.confirm(f"Delete these {len(rows)} cassettes?"):
+                click.echo("Aborted.")
+                return
+                
+        deleted_count = 0
+        for row in rows:
+            if storage.delete_entry(row.content_hash):
+                deleted_count += 1
+                
+        click.echo(f"Deleted {deleted_count} cassettes.")
+        return
+
+    # Delete by cassette_id
     resolved = _resolve_cassette_id(storage, cassette_id)
     if resolved is None:
         ctx.exit(1)
@@ -688,7 +745,18 @@ def cassette_fill(ctx: click.Context, cassette_id: str, count: int | None, cache
 
     existing_replies = index_row.replies if index_row else metadata.replies
     if existing_replies >= target_count:
-        click.echo(f"Cassette already has {existing_replies} replies (target: {target_count}). Nothing to do.")
+        if as_json:
+            click.echo(json.dumps({
+                "content_hash": resolved,
+                "added": 0,
+                "duplicates": 0,
+                "errors": 0,
+                "attempts": 0,
+                "total_replies": existing_replies,
+                "target": target_count
+            }, indent=2))
+        else:
+            click.echo(f"Cassette already has {existing_replies} replies (target: {target_count}). Nothing to do.")
         return
 
     # Reconstruct the request body from the tape

@@ -90,7 +90,7 @@ class Router:
 
     def __init__(self, mode: Mode, storage: CacheStorage, outflow: OutflowClient | OutflowRouter | None = None,
                  non_streaming_models: list[str] | None = None, fuzzy_model: bool = False, fuzzy_sampling: str = "off",
-                 max_non_greedy_replies: int = 5) -> None:
+                 max_non_greedy_replies: int = 5, max_live_requests: int | None = None) -> None:
         """
         Initialize the router.
 
@@ -112,6 +112,8 @@ class Router:
         self.fuzzy_model = fuzzy_model
         self.fuzzy_sampling = fuzzy_sampling
         self.max_non_greedy_replies = max_non_greedy_replies
+        self.max_live_requests = max_live_requests
+        self.live_requests_count = 0
         self.replay_counter = ReplayCounter()
 
         if mode == Mode.RECORD_AND_REPLAY and outflow is None:
@@ -414,6 +416,23 @@ class Router:
         """
         assert self.outflow is not None
 
+        if self.max_live_requests is not None and self.live_requests_count >= self.max_live_requests:
+            self.log.warning("Live request limit reached (%d). Rejecting upstream call.", self.max_live_requests)
+            return CachedResponse(
+                status_code=503,
+                headers={"Content-Type": "application/json"},
+                body={
+                    "error": {
+                        "message": f"Global live request limit ({self.max_live_requests}) exceeded. Temporary unavailable.",
+                        "type": "live_request_limit_exceeded",
+                        "code": "temporary_unavailable"
+                    }
+                },
+                is_streaming=False,
+            )
+
+        self.live_requests_count += 1
+
         # Remember the client's original streaming preference
         original_client_streaming = False
         if cached_request.body and isinstance(cached_request.body, dict):
@@ -455,6 +474,23 @@ class Router:
         overwrite the existing ``TapeMetadata.metadata`` mapping).
         """
         assert self.outflow is not None
+
+        if self.max_live_requests is not None and self.live_requests_count >= self.max_live_requests:
+            self.log.warning("Live request limit reached (%d). Rejecting upstream call.", self.max_live_requests)
+            return CachedResponse(
+                status_code=503,
+                headers={"Content-Type": "application/json"},
+                body={
+                    "error": {
+                        "message": f"Global live request limit ({self.max_live_requests}) exceeded. Temporary unavailable.",
+                        "type": "live_request_limit_exceeded",
+                        "code": "temporary_unavailable"
+                    }
+                },
+                is_streaming=False,
+            )
+
+        self.live_requests_count += 1
 
         # Remember the client's original streaming preference
         original_client_streaming = False

@@ -1,5 +1,6 @@
 """Tests for InferenceGate recording/storage module (v2 tape format)."""
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -292,7 +293,10 @@ class TestCacheStorage:
             headers={"content-type": "application/json"},
             body={
                 "model": "gpt-4",
-                "messages": [{"role": "user", "content": "Hi"}],
+                "messages": [{
+                    "role": "user",
+                    "content": "Hi"
+                }],
                 "temperature": 0,
                 "return_token_ids": True,
             },
@@ -302,7 +306,12 @@ class TestCacheStorage:
             status_code=200,
             headers={"content-type": "application/json"},
             body={
-                "choices": [{"message": {"content": "Hello!"}, "token_ids": [10, 11]}],
+                "choices": [{
+                    "message": {
+                        "content": "Hello!"
+                    },
+                    "token_ids": [10, 11]
+                }],
                 "prompt_token_ids": prompt_token_ids,
             },
         )
@@ -323,7 +332,6 @@ class TestCacheStorage:
         to Chat Completions shape which discards the `choices[*].text` field and
         records an empty body.  The stored JSON must now carry the text.
         """
-        import json
         request = CachedRequest(method="POST", path="/v1/completions", headers={}, body={
             "model": "gpt-4",
             "prompt": "Hello",
@@ -353,6 +361,53 @@ class TestCacheStorage:
             f"Expected text_completion, got {reassembled.get('object')!r} - request path was not threaded through."
         assert reassembled["choices"][0]["text"] == "Hello", \
             f"Expected concatenated text 'Hello', got {reassembled['choices'][0].get('text')!r}"
+
+    def test_streaming_ndjson_stores_complete_sse_events(self, storage, temp_cache_dir):
+        """Streaming sidecars are written from parsed SSE events, not raw network lines.
+
+        Regression: raw network chunks can split a single ``data:`` event in
+        the middle of a tool-call argument string.  Storing each raw split line
+        as NDJSON corrupts replay because the missing fragment never reaches
+        the reassembler.
+        """
+        from inference_gate.recording.reassembly import reassemble_chat_completion
+        request = CachedRequest(method="POST", path="/v1/chat/completions", headers={}, body={
+            "model": "gpt-4",
+            "messages": [{
+                "role": "user",
+                "content": "call a tool",
+            }],
+            "stream": True,
+        })
+        response = CachedResponse(
+            status_code=200,
+            headers={},
+            chunks=[
+                'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4",'
+                '"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_abc",'
+                '"type":"function","function":{"name":"lookup","arguments":""}}]},"finish_reason":null}]}\n\n',
+                'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4",'
+                '"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"route_label\\": '
+                '\\"openrouter-deepseek-tool-con',
+                'tract\\", \\"hops\\": 7}"}}]},"finish_reason":null}]}\n\n',
+                'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4",'
+                '"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+                'data: [DONE]\n\n',
+            ],
+            is_streaming=True,
+        )
+        entry = CacheEntry(request=request, response=response, model="gpt-4")
+        storage.put(entry)
+
+        ndjson_files = list((Path(temp_cache_dir) / "responses").glob("*.chunks.ndjson"))
+        assert len(ndjson_files) == 1
+        lines = [line for line in ndjson_files[0].read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert all(json.loads(line) for line in lines)
+
+        replay_chunks = [f"data: {line}\n\n" for line in lines]
+        replayed = reassemble_chat_completion(replay_chunks)
+        arguments = replayed["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        assert json.loads(arguments) == {"route_label": "openrouter-deepseek-tool-contract", "hops": 7}
 
     def test_original_client_streaming_metadata(self, storage):
         """Test that original_client_streaming metadata is stored in CacheEntry."""
@@ -908,19 +963,38 @@ class TestRawPromptSupport:
         """
         body = {
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "What is the weather?"},
                 {
-                    "role": "assistant",
-                    "content": "",
+                    "role": "system",
+                    "content": "You are a helpful assistant."
+                },
+                {
+                    "role": "user",
+                    "content": "What is the weather?"
+                },
+                {
+                    "role":
+                        "assistant",
+                    "content":
+                        "",
                     "tool_calls": [{
                         "id": "call_001",
                         "type": "function",
-                        "function": {"name": "get_weather", "arguments": '{"city":"Paris"}'},
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city":"Paris"}'
+                        },
                     }],
                 },
-                {"role": "tool", "tool_call_id": "call_001", "name": "get_weather", "content": "22C sunny"},
-                {"role": "user", "content": "Thanks!"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_001",
+                    "name": "get_weather",
+                    "content": "22C sunny"
+                },
+                {
+                    "role": "user",
+                    "content": "Thanks!"
+                },
             ]
         }
         sections = build_message_sections(body, "abc123")
@@ -949,17 +1023,28 @@ class TestRawPromptSupport:
 
         body = {
             "messages": [
-                {"role": "user", "content": "Hi"},
+                {
+                    "role": "user",
+                    "content": "Hi"
+                },
                 {
                     "role": "assistant",
                     "content": "",
                     "tool_calls": [{
                         "id": "tc_42",
                         "type": "function",
-                        "function": {"name": "ping", "arguments": '{"x":1}'},
+                        "function": {
+                            "name": "ping",
+                            "arguments": '{"x":1}'
+                        },
                     }],
                 },
-                {"role": "tool", "tool_call_id": "tc_42", "name": "ping", "content": "pong"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "tc_42",
+                    "name": "ping",
+                    "content": "pong"
+                },
             ]
         }
         boundary = "deadbe"

@@ -49,6 +49,16 @@ def _parse_sse_events(chunks: list[str]) -> list[dict[str, Any]]:
     return events
 
 
+def parse_sse_events(chunks: list[str]) -> list[dict[str, Any]]:
+    """
+    Parse raw SSE transport chunks into complete JSON event objects.
+
+    Public wrapper around the internal parser for storage/replay code that
+    needs event-boundary-safe chunks without depending on private helpers.
+    """
+    return _parse_sse_events(chunks)
+
+
 def reassemble_chat_completion(chunks: list[str]) -> dict[str, Any]:
     """
     Reassemble streaming Chat Completions SSE chunks into a single non-streaming response.

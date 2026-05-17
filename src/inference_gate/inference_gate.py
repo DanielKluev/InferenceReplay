@@ -35,8 +35,9 @@ class InferenceGate:
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8080, mode: Mode = Mode.RECORD_AND_REPLAY, cache_dir: str = ".inference_cache",
                  web_ui: bool = False, web_ui_port: int = 8081, non_streaming_models: list[str] | None = None, fuzzy_model: bool = False,
-                 fuzzy_sampling: str = "off", max_non_greedy_replies: int = 5, record_timeout: float = 600.0,
-                 endpoints: dict[str, EndpointConfig] | None = None, models: list[ModelRoute] | None = None) -> None:
+                 fuzzy_sampling: str = "off", max_non_greedy_replies: int = 5, max_live_requests: int | None = None,
+                 record_timeout: float = 600.0, endpoints: dict[str, EndpointConfig] | None = None,
+                 models: list[ModelRoute] | None = None) -> None:
         """
         Initialize InferenceGate with configuration.
 
@@ -74,6 +75,7 @@ class InferenceGate:
         self.fuzzy_model = fuzzy_model
         self.fuzzy_sampling = fuzzy_sampling
         self.max_non_greedy_replies = max_non_greedy_replies
+        self.max_live_requests = max_live_requests
         self.record_timeout = record_timeout
         self.endpoints: dict[str, EndpointConfig] = dict(endpoints) if endpoints else {}
         self.models: list[ModelRoute] = list(models) if models else []
@@ -104,7 +106,7 @@ class InferenceGate:
 
         self._router = Router(mode=self.mode, storage=self._storage, outflow=self._outflow, non_streaming_models=self.non_streaming_models,
                               fuzzy_model=self.fuzzy_model, fuzzy_sampling=self.fuzzy_sampling,
-                              max_non_greedy_replies=self.max_non_greedy_replies)
+                              max_non_greedy_replies=self.max_non_greedy_replies, max_live_requests=self.max_live_requests)
         self._server = InflowServer(host=self.host, port=self.port, router=self._router, record_timeout=self.record_timeout)
 
         # WebUIServer is optional

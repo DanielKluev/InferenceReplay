@@ -7,13 +7,49 @@ Uses ``pytester`` (pytest's built-in fixture for testing plugins) for the
 sub-pytest scenarios and direct unit tests for the option resolution helper.
 """
 
+import http.client
+import json
 import textwrap
+import urllib.parse
 from pathlib import Path
 
 import pytest
 
 # Path to the production cassettes shipped with InferenceGate's own tests.
 CASSETTES_DIR = str(Path(__file__).parent / "cassettes")
+
+# The replay/fuzzy plugin tests below use this production cassette prompt.
+CASSETTE_MODEL = "openai/gpt-oss-120b"
+CASSETTE_MAX_TOKENS = 200
+OK_PROMPT = 'This is a test prompt. Reply with **ONLY** "OK." to confirm that everything is ok. DO NOT output anything else.'
+
+
+def _post_default_mode_ok_prompt(inference_gate_url: str) -> dict:
+    """
+    Send the plugin replay prompt without a per-request replay override.
+
+    This gives record-mode test sessions a normal-mode request that can recreate the shared OK
+    cassette before subprocess tests deliberately force replay-only behavior against it.
+    """
+    parsed = urllib.parse.urlparse(inference_gate_url)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+    try:
+        body = json.dumps({
+            "model": CASSETTE_MODEL,
+            "messages": [{
+                "role": "user",
+                "content": OK_PROMPT
+            }],
+            "max_tokens": CASSETTE_MAX_TOKENS,
+        })
+        conn.request("POST", "/v1/chat/completions", body=body, headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        payload = resp.read()
+        assert resp.status == 200, f"status={resp.status} body={payload[:500]!r}"
+        return json.loads(payload)
+    finally:
+        conn.close()
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for _resolve_option
@@ -55,17 +91,18 @@ class TestSubprocessCommand:
     Tests for the plugin subprocess command line builder.
     """
 
-    def test_config_path_is_passed_before_subcommand(self):
+    def test_config_path_is_passed_before_subcommand(self, tmp_path):
         """
         ``--inferencegate-config`` must become a Click group option before ``serve``.
         """
         from inference_gate.pytest_plugin import _SubprocessServer
-        server = _SubprocessServer({"mode": "record", "host": "127.0.0.1", "port": 0, "config": "D:/tmp/gate.yaml"})
+        config_path = str(tmp_path / "gate.yaml")
+        server = _SubprocessServer({"mode": "record", "host": "127.0.0.1", "port": 0, "config": config_path})
 
         cmd = server._build_cmd()
 
         assert "--config" in cmd
-        assert cmd[cmd.index("--config") + 1] == "D:/tmp/gate.yaml"
+        assert cmd[cmd.index("--config") + 1] == config_path
         assert cmd.index("--config") < cmd.index("serve")
         assert cmd[cmd.index("--mode") + 1] == "record"
 
@@ -286,6 +323,12 @@ class TestCassetteReplayViaPytestPlugin:
     """
     Tests that the plugin replays cassettes through the auto-launched server.
     """
+
+    def test_default_mode_serves_or_records_ok_prompt(self, inference_gate_url):
+        """The shared OK prompt cassette is available before sub-pytests force replay mode."""
+        data = _post_default_mode_ok_prompt(inference_gate_url)
+        content = data["choices"][0]["message"]["content"]
+        assert "OK" in content
 
     def test_replay_ok_prompt(self, pytester, monkeypatch):
         """
@@ -540,13 +583,13 @@ class TestInferenceGateMarker:
     def test_marker_pushes_per_test_headers(self, pytester):
         """
         ``@pytest.mark.inferencegate(fuzzy_model=False)`` pushes the
-        ``X-InferenceGate-Require-Fuzzy-Model: off`` header onto Glue's
-        request-context ContextVar for the duration of the test, leaving
+        ``X-InferenceGate-Require-Fuzzy-Model: off`` header onto Gate's
+        pytest header context for the duration of the test, leaving
         ``fuzzy_sampling`` to fall back to the session default.
         """
         pytester.makepyfile("""
             import pytest
-            from inference_glue.request_context import current_headers
+            from inference_gate.pytest_context import current_headers
 
             @pytest.mark.inferencegate(fuzzy_model=False)
             def test_only_model_off(inference_gate_url):
@@ -570,7 +613,7 @@ class TestInferenceGateMarker:
         """
         pytester.makepyfile("""
             import pytest
-            from inference_glue.request_context import current_headers
+            from inference_gate.pytest_context import current_headers
 
             @pytest.mark.inferencegate(fuzzy_model=False)
             def test_first_marked(inference_gate_url):
@@ -596,11 +639,11 @@ class TestAutoTestIdentityMetadata:
     def test_node_id_and_worker_id_pushed_for_every_test(self, pytester):
         """
         Every test (marked or not) gets its pytest nodeid and the xdist
-        worker name (``"master"`` outside xdist) pushed onto Glue's
-        request-context ContextVar.
+        worker name (``"master"`` outside xdist) pushed onto Gate's pytest
+        header context.
         """
         pytester.makepyfile("""
-            from inference_glue.request_context import current_headers
+            from inference_gate.pytest_context import current_headers
 
             def test_metadata_pushed(inference_gate_url):
                 hdrs = current_headers()

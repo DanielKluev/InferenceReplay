@@ -211,6 +211,7 @@ __marimo__/
 # Local inference cache
 .inference_cache/
 .test_cache/
+tests/cassettes/requests_raw/
 
 # Local settings files
 .vscode/settings.json
@@ -220,3 +221,4 @@ configs/
 docs/planning/
 docs/sessions/
 howto.txt
+

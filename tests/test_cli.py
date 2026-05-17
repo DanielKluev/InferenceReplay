@@ -588,7 +588,7 @@ class TestCassetteFillCommand:
             "target": 5,
         }
 
-        result = runner.invoke(main, ["cassette", "fill", content_hash, "--cache-dir", temp_cache_dir, "--api-key", "test-key", "--json"])
+        result = runner.invoke(main, ["cassette", "fill", content_hash, "--cache-dir", temp_cache_dir, "--api-key", "test-key", "--count", "5", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["added"] == 2

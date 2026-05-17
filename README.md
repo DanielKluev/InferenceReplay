@@ -84,6 +84,7 @@ inference-gate start [OPTIONS]
 | `--cache-dir, -c` | Cache directory | .inference_cache |
 | `--upstream, -u` | Upstream API URL | https://api.openai.com |
 | `--api-key, -k` | OpenAI API key | $OPENAI_API_KEY |
+| `--max-live-requests` | Global limit on live upstream requests | (infinite) |
 | `--web-ui` | Enable web UI dashboard | false |
 | `--web-ui-port` | Web UI server port | 8081 |
 | `--verbose, -v` | Enable verbose logging | false |
@@ -263,6 +264,7 @@ inference-gate --config /path/to/config.yaml start
 # Server settings
 host: "127.0.0.1"
 port: 8080
+max_live_requests: null  # Optional global limit on live upstream requests
 
 # Upstream API settings
 upstream: "https://api.openai.com"

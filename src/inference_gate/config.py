@@ -84,6 +84,11 @@ class Config(BaseModel):
         default=5, description="Maximum number of replies to collect per non-greedy cassette "
         "before switching to replay cycling")
 
+    # Global limit on live requests
+    max_live_requests: int | None = Field(
+        default=None, description="Global limit on the number of non-cassette upstream requests "
+        "InferenceGate will perform per session. If not provided, means infinite.")
+
     # Endpoint pool keyed by name.  Each endpoint becomes a pooled OutflowClient
     # (deduplicated by (url, api_key, proxy)).
     endpoints: dict[str, EndpointDef] = Field(

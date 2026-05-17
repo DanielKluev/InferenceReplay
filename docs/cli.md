@@ -36,6 +36,7 @@ inference-gate start [OPTIONS]
 | `--cache-dir` | `-c` | Directory to store cached responses | .inference_cache |
 | `--upstream` | `-u` | Upstream OpenAI API base URL | https://api.openai.com |
 | `--api-key` | `-k` | OpenAI API key | $OPENAI_API_KEY |
+| `--max-live-requests` | | Global limit on the number of non-cassette upstream requests | none |
 | `--upstream-timeout` | | Timeout in seconds for upstream API requests before 504 | 120.0 |
 | `--proxy` | | HTTP proxy URL for upstream requests | none |
 | `--verbose` | `-v` | Enable verbose (DEBUG) logging | false |
@@ -373,9 +374,10 @@ inference-gate cassette read 6c72 --json
 ### `cassette delete` - Delete a Cassette
 
 Delete a single cassette by ID, removing the tape file, associated response files, and index entry.
+Alternatively, delete all cassettes for a specific model using the `--model` flag, or delete all cassettes that recorded an error using `--non-200`.
 
 ```bash
-inference-gate cassette delete CASSETTE_ID [OPTIONS]
+inference-gate cassette delete [CASSETTE_ID] [OPTIONS]
 ```
 
 **Options:**
@@ -383,6 +385,8 @@ inference-gate cassette delete CASSETTE_ID [OPTIONS]
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--cache-dir` | `-c` | Directory where cached responses are stored | .inference_cache |
+| `--model` | `-m` | Delete all cassettes matching this model name (substring match) | |
+| `--non-200` | | Delete all cassettes with a non-200 HTTP status code | |
 | `--yes` | `-y` | Skip confirmation prompt | false |
 
 **Example:**
@@ -390,6 +394,12 @@ inference-gate cassette delete CASSETTE_ID [OPTIONS]
 ```bash
 # Interactive (asks for confirmation)
 inference-gate cassette delete 6c72599f3142
+
+# Delete all cassettes for a specific model
+inference-gate cassette delete --model gpt-4
+
+# Delete all cassettes with an error response (non-200)
+inference-gate cassette delete --non-200
 
 # Non-interactive
 inference-gate cassette delete 6c72 --yes

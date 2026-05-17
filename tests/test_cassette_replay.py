@@ -7,7 +7,9 @@ Both streaming (SSE) and non-streaming (reassembled JSON) client delivery
 paths are exercised against real-world API responses.
 """
 
+import http.client
 import json
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -49,6 +51,48 @@ async def cassette_client(cassette_server):
     app = cassette_server._create_app()
     async with TestClient(TestServer(app)) as client:
         yield client
+
+
+def _post_default_mode_chat_completion(inference_gate_url: str, prompt: str) -> dict:
+    """
+    Send one production cassette prompt through the pytest-managed Gate without forcing replay mode.
+
+    In replay sessions this proves the cassette is usable through the normal session mode. In record
+    sessions, after a developer intentionally deletes ``tests/cassettes``, this request is allowed to
+    reach the configured upstream and recreate the cassette before the replay-only tests below run.
+    """
+    parsed = urllib.parse.urlparse(inference_gate_url)
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+    try:
+        body = json.dumps({
+            "model": CASSETTE_MODEL,
+            "messages": [{
+                "role": "user",
+                "content": prompt
+            }],
+            "max_tokens": CASSETTE_MAX_TOKENS,
+        })
+        conn.request("POST", "/v1/chat/completions", body=body, headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        payload = resp.read()
+        assert resp.status == 200, f"status={resp.status} body={payload[:500]!r}"
+        return json.loads(payload)
+    finally:
+        conn.close()
+
+
+class TestCassetteReplayDefaultModeSeed:
+    """Tests for the production cassette prompts through the pytest-managed default mode."""
+
+    def test_default_mode_serves_or_records_replay_prompts(self, inference_gate_url):
+        """The replay-only cassette prompts are first exercised without a per-request replay override."""
+        ok_data = _post_default_mode_chat_completion(inference_gate_url, OK_PROMPT)
+        ok_content = ok_data["choices"][0]["message"]["content"]
+        assert "OK" in ok_content
+
+        math_data = _post_default_mode_chat_completion(inference_gate_url, MATH_PROMPT)
+        math_content = math_data["choices"][0]["message"]["content"]
+        assert "4" in math_content
 
 
 class TestCassetteReplayNonStreaming:

@@ -150,9 +150,8 @@ class CacheStorage:
             self.index._needs_rebuild = False
 
     def dump_raw_request(self, *, method: str, path: str, headers: dict[str, str], body: dict[str, Any] | None,
-                          query_params: dict[str, str] | None, content_hash: str, prompt_model_hash: str | None = None,
-                          prompt_hash: str | None = None, outcome: str | None = None,
-                          extra: dict[str, Any] | None = None) -> Path | None:
+                         query_params: dict[str, str] | None, content_hash: str, prompt_model_hash: str | None = None,
+                         prompt_hash: str | None = None, outcome: str | None = None, extra: dict[str, Any] | None = None) -> Path | None:
         """
         Persist a verbatim JSON dump of an incoming request under
         ``requests_raw/<content_hash>.json`` for debugging.
@@ -870,7 +869,7 @@ class CacheStorage:
 
         if response.is_streaming and response.chunks:
             # Reassemble the response to get a JSON body for hashing and storage
-            from inference_gate.recording.reassembly import reassemble_streaming_response
+            from inference_gate.recording.reassembly import parse_sse_events, reassemble_streaming_response
             reassembled = reassemble_streaming_response(response.chunks, request_path)
             if reassembled:
                 response_hash = compute_response_hash(reassembled)
@@ -883,14 +882,11 @@ class CacheStorage:
             # Store NDJSON chunks (stripped SSE framing)
             ndjson_path = self.responses_dir / f"{response_hash}.chunks.ndjson"
             if not ndjson_path.exists():
-                lines = []
-                for chunk in response.chunks:
-                    for line in chunk.splitlines():
-                        line = line.strip()
-                        if line.startswith("data:"):
-                            data_str = line[len("data:"):].strip()
-                            if data_str and data_str != "[DONE]":
-                                lines.append(data_str)
+                # ``response.chunks`` are raw network chunks, not guaranteed
+                # to align with SSE event boundaries.  Parse complete events
+                # before writing NDJSON so replay never sees partial JSON
+                # fragments as standalone ``data:`` events.
+                lines = [json.dumps(event, ensure_ascii=False) for event in parse_sse_events(response.chunks)]
                 atomic_write_text(ndjson_path, "\n".join(lines) + "\n")
             has_stream = True
 

@@ -46,6 +46,7 @@ upstream_timeout: 300.0
 fuzzy_model: false
 fuzzy_sampling: "off"
 max_non_greedy_replies: 5
+max_live_requests: null
 non_streaming_models:
   - "o1-preview"
   - "o1-mini"
@@ -122,6 +123,7 @@ In this example, requests for `Gemma4:E4B-it-Q4_K_M` go to `http://127.0.0.1:812
 | `fuzzy_model` | boolean | `false` | When enabled, on a cache miss, InferenceGate looks for cached entries with the same prompt but a different model name. Useful when switching between equivalent models. |
 | `fuzzy_sampling` | string | `"off"` | Controls fuzzy matching of sampling parameters. `"off"` = exact match only. `"soft"` = match non-greedy requests with different sampling params (greedy stays exact). `"aggressive"` = match across any sampling param difference, including greedy ↔ non-greedy. |
 | `max_non_greedy_replies` | integer | `5` | Maximum number of distinct replies to collect in a cassette for non-greedy (temperature > 0) requests before cycling through existing replies. Greedy requests always store exactly 1 reply. |
+| `max_live_requests` | integer or null | `null` | Global limit on the number of live (non-cassette) upstream requests InferenceGate will perform per session. Once this limit is reached, InferenceGate will return an HTTP 503 error for any further upstream requests. `null` means infinite. |
 
 ### Streaming Settings
 
@@ -159,6 +161,7 @@ The following table shows how configuration file fields map to CLI options on th
 | `fuzzy_model` | `--fuzzy-model` / `--no-fuzzy-model` | `start`, `replay` |
 | `fuzzy_sampling` | `--fuzzy-sampling` | `start`, `replay` |
 | `max_non_greedy_replies` | `--max-non-greedy-replies` | `start`, `replay` |
+| `max_live_requests` | `--max-live-requests` | `start`, `serve` |
 | `verbose` | `--verbose` / `-v` | `start`, `replay` |
 
 ## Managing Configuration

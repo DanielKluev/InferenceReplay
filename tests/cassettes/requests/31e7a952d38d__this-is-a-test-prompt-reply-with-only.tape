@@ -9,27 +9,27 @@ max_tokens: 200
 stop_sequences: []
 tools: []
 logprobs: false
-recorded: '2026-05-11T15:54:48.952373Z'
+recorded: '2026-05-17T08:57:34.762304Z'
 replies: 1
-max_replies: 5
+max_replies: 1
 status_code: 200
-boundary: c1955e
+boundary: 1dbd4d
 sampling:
   is_greedy: false
 ---
---c1955e user
+--1dbd4d user
 
 This is a test prompt. Reply with **ONLY** "OK." to confirm that everything is ok. DO NOT output anything else.
---c1955e reply 1
-Response: 23ccf77fd88d.json
-Stream: 23ccf77fd88d.chunks.ndjson
+--1dbd4d reply 1
+Response: 12aa5cf567a2.json
+Stream: 12aa5cf567a2.chunks.ndjson
 Status: 200
 Stop-Reason: stop
-Input-Tokens: 34
-Output-Tokens: 2
+Input-Tokens: 94
+Output-Tokens: 18
 
 OK.
---c1955e reply 1 reasoning
+--1dbd4d reply 1 reasoning
 
-The user wants only "OK." and nothing else. Must comply.
---c1955e--
+The user wants only "OK." as reply, nothing else. Must obey.
+--1dbd4d--
