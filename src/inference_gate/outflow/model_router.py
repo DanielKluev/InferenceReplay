@@ -115,9 +115,7 @@ class OutflowRouter:
     whose model has no usable live endpoint, instead of raising.
     """
 
-    def __init__(
-        self, endpoints: dict[str, EndpointConfig], routes: list[ModelRoute]
-    ) -> None:
+    def __init__(self, endpoints: dict[str, EndpointConfig], routes: list[ModelRoute]) -> None:
         """
         Initialize the outflow router.
 
@@ -134,10 +132,8 @@ class OutflowRouter:
         # Validate every non-None endpoint reference up-front.
         for route in routes:
             if route.endpoint_name is not None and route.endpoint_name not in endpoints:
-                raise ValueError(
-                    f"ModelRoute(pattern={route.pattern!r}) references unknown endpoint {route.endpoint_name!r}; "
-                    f"known endpoints: {sorted(endpoints)}"
-                )
+                raise ValueError(f"ModelRoute(pattern={route.pattern!r}) references unknown endpoint {route.endpoint_name!r}; "
+                                 f"known endpoints: {sorted(endpoints)}")
 
         self._endpoints: dict[str, EndpointConfig] = dict(endpoints)
         self._routes: list[ModelRoute] = list(routes)
@@ -155,15 +151,11 @@ class OutflowRouter:
 
         # Sort globs by descending specificity, then ascending declaration order
         # so the first match in this list is always the winner.
-        self._glob_routes.sort(
-            key=lambda r: (-_pattern_specificity(r.pattern), r.order)
-        )
+        self._glob_routes.sort(key=lambda r: (-_pattern_specificity(r.pattern), r.order))
 
         # Build the deduplicated client pool keyed by EndpointConfig.dedup_key().
         # endpoint_name → (dedup_key, OutflowClient) so we can resolve quickly.
-        self._client_by_key: dict[
-            tuple[str, str | None, str | None], OutflowClient
-        ] = {}
+        self._client_by_key: dict[tuple[str, str | None, str | None], OutflowClient] = {}
         self._client_by_endpoint: dict[str, OutflowClient] = {}
         for name, cfg in self._endpoints.items():
             key = cfg.dedup_key()
@@ -238,9 +230,7 @@ class OutflowRouter:
         Stop every pooled ``OutflowClient`` instance.
         """
         if self._client_by_key:
-            await asyncio.gather(
-                *(client.stop() for client in self._client_by_key.values())
-            )
+            await asyncio.gather(*(client.stop() for client in self._client_by_key.values()))
         self.log.info("OutflowRouter stopped")
 
     async def forward_request(self, request: CachedRequest) -> CachedResponse:
@@ -260,16 +250,14 @@ class OutflowRouter:
 
         route = self._resolve_route(model_name)
         if route is None:
-            self.log.warning(
-                "Unrouted model %r (%s %s)", model_name, request.method, request.path
-            )
+            self.log.warning("Unrouted model %r (%s %s)", model_name, request.method, request.path)
             return CachedResponse(
                 status_code=422,
                 headers={"Content-Type": "application/json"},
                 body={
                     "error": {
                         "message": f"Model {model_name!r} is not registered in the InferenceGate routing table; "
-                        "add it to the configured ``models`` map or use a glob/catch-all pattern.",
+                                   "add it to the configured ``models`` map or use a glob/catch-all pattern.",
                         "type": "unrouted_model",
                         "code": "unrouted_model",
                         "model": model_name,
@@ -289,7 +277,7 @@ class OutflowRouter:
                 body={
                     "error": {
                         "message": f"Model {model_name!r} is registered (matched route {route.pattern!r}) but no live "
-                        "endpoint is configured on this machine; cassette replay is required.",
+                                   "endpoint is configured on this machine; cassette replay is required.",
                         "type": "model_offline",
                         "code": "model_offline",
                         "model": model_name,
