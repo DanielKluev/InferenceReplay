@@ -6,10 +6,10 @@
   "path": "/v1/chat/completions",
   "query_params": {},
   "headers": {
-    "Host": "127.0.0.1:6896",
+    "Host": "127.0.0.1:35565",
     "Accept": "*/*",
     "Accept-Encoding": "gzip, deflate",
-    "User-Agent": "Python/3.11 aiohttp/3.13.5",
+    "User-Agent": "Python/3.12 aiohttp/3.13.5",
     "Content-Length": "203",
     "Content-Type": "application/json"
   },
