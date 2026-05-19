@@ -28,6 +28,7 @@ routes pointing at the same physical endpoint share a single
 Key classes: ``EndpointConfig``, ``ModelRoute``, ``OutflowRouter``
 """
 
+import asyncio
 import fnmatch
 import logging
 from dataclasses import dataclass
@@ -114,7 +115,9 @@ class OutflowRouter:
     whose model has no usable live endpoint, instead of raising.
     """
 
-    def __init__(self, endpoints: dict[str, EndpointConfig], routes: list[ModelRoute]) -> None:
+    def __init__(
+        self, endpoints: dict[str, EndpointConfig], routes: list[ModelRoute]
+    ) -> None:
         """
         Initialize the outflow router.
 
@@ -133,7 +136,8 @@ class OutflowRouter:
             if route.endpoint_name is not None and route.endpoint_name not in endpoints:
                 raise ValueError(
                     f"ModelRoute(pattern={route.pattern!r}) references unknown endpoint {route.endpoint_name!r}; "
-                    f"known endpoints: {sorted(endpoints)}")
+                    f"known endpoints: {sorted(endpoints)}"
+                )
 
         self._endpoints: dict[str, EndpointConfig] = dict(endpoints)
         self._routes: list[ModelRoute] = list(routes)
@@ -151,17 +155,25 @@ class OutflowRouter:
 
         # Sort globs by descending specificity, then ascending declaration order
         # so the first match in this list is always the winner.
-        self._glob_routes.sort(key=lambda r: (-_pattern_specificity(r.pattern), r.order))
+        self._glob_routes.sort(
+            key=lambda r: (-_pattern_specificity(r.pattern), r.order)
+        )
 
         # Build the deduplicated client pool keyed by EndpointConfig.dedup_key().
         # endpoint_name → (dedup_key, OutflowClient) so we can resolve quickly.
-        self._client_by_key: dict[tuple[str, str | None, str | None], OutflowClient] = {}
+        self._client_by_key: dict[
+            tuple[str, str | None, str | None], OutflowClient
+        ] = {}
         self._client_by_endpoint: dict[str, OutflowClient] = {}
         for name, cfg in self._endpoints.items():
             key = cfg.dedup_key()
             if key not in self._client_by_key:
-                self._client_by_key[key] = OutflowClient(upstream_base_url=cfg.url, api_key=cfg.api_key, timeout=cfg.timeout,
-                                                         proxy=cfg.proxy)
+                self._client_by_key[key] = OutflowClient(
+                    upstream_base_url=cfg.url,
+                    api_key=cfg.api_key,
+                    timeout=cfg.timeout,
+                    proxy=cfg.proxy,
+                )
             self._client_by_endpoint[name] = self._client_by_key[key]
 
     @property
@@ -192,7 +204,11 @@ class OutflowRouter:
                 return exact
             for route in self._glob_routes:
                 if fnmatch.fnmatch(model_name, route.pattern):
-                    self.log.debug("Glob route match '%s' for model '%s'", route.pattern, model_name)
+                    self.log.debug(
+                        "Glob route match '%s' for model '%s'",
+                        route.pattern,
+                        model_name,
+                    )
                     return route
             return None
         # No model name — only the bare ``"*"`` catch-all (or empty-string exact)
@@ -211,15 +227,20 @@ class OutflowRouter:
         """
         for client in self._client_by_key.values():
             await client.start()
-        self.log.info("OutflowRouter started with %d unique endpoint(s); %d route(s) configured", len(self._client_by_key),
-                      len(self._routes))
+        self.log.info(
+            "OutflowRouter started with %d unique endpoint(s); %d route(s) configured",
+            len(self._client_by_key),
+            len(self._routes),
+        )
 
     async def stop(self) -> None:
         """
         Stop every pooled ``OutflowClient`` instance.
         """
-        for client in self._client_by_key.values():
-            await client.stop()
+        if self._client_by_key:
+            await asyncio.gather(
+                *(client.stop() for client in self._client_by_key.values())
+            )
         self.log.info("OutflowRouter stopped")
 
     async def forward_request(self, request: CachedRequest) -> CachedResponse:
@@ -239,15 +260,16 @@ class OutflowRouter:
 
         route = self._resolve_route(model_name)
         if route is None:
-            self.log.warning("Unrouted model %r (%s %s)", model_name, request.method, request.path)
+            self.log.warning(
+                "Unrouted model %r (%s %s)", model_name, request.method, request.path
+            )
             return CachedResponse(
                 status_code=422,
                 headers={"Content-Type": "application/json"},
                 body={
                     "error": {
-                        "message":
-                            f"Model {model_name!r} is not registered in the InferenceGate routing table; "
-                            "add it to the configured ``models`` map or use a glob/catch-all pattern.",
+                        "message": f"Model {model_name!r} is not registered in the InferenceGate routing table; "
+                        "add it to the configured ``models`` map or use a glob/catch-all pattern.",
                         "type": "unrouted_model",
                         "code": "unrouted_model",
                         "model": model_name,
@@ -256,15 +278,18 @@ class OutflowRouter:
             )
 
         if route.endpoint_name is None:
-            self.log.warning("Model %r matched offline route %r (no live endpoint on this machine)", model_name, route.pattern)
+            self.log.warning(
+                "Model %r matched offline route %r (no live endpoint on this machine)",
+                model_name,
+                route.pattern,
+            )
             return CachedResponse(
                 status_code=503,
                 headers={"Content-Type": "application/json"},
                 body={
                     "error": {
-                        "message":
-                            f"Model {model_name!r} is registered (matched route {route.pattern!r}) but no live "
-                            "endpoint is configured on this machine; cassette replay is required.",
+                        "message": f"Model {model_name!r} is registered (matched route {route.pattern!r}) but no live "
+                        "endpoint is configured on this machine; cassette replay is required.",
                         "type": "model_offline",
                         "code": "model_offline",
                         "model": model_name,
