@@ -175,6 +175,7 @@ def _redact_endpoint(name: str, cfg: EndpointConfig) -> dict[str, Any]:
         "api_key": REDACTION_PLACEHOLDER if cfg.api_key else None,
         "timeout": cfg.timeout,
         "proxy": _redact_url(cfg.proxy) if cfg.proxy else None,
+        "verify_ssl": cfg.verify_ssl,
     }
 
 
@@ -306,7 +307,7 @@ def _validate_endpoints_payload(value: Any) -> str | None:
             return f"endpoints[{name!r}] must be a JSON object"
         if "url" not in cfg or not isinstance(cfg["url"], str) or not cfg["url"]:
             return f"endpoints[{name!r}] must contain a non-empty string 'url'"
-        for opt_key, expected in (("api_key", str), ("proxy", str), ("timeout", (int, float))):
+        for opt_key, expected in (("api_key", str), ("proxy", str), ("timeout", (int, float)), ("verify_ssl", bool)):
             if opt_key in cfg and cfg[opt_key] is not None and not isinstance(cfg[opt_key], expected):
                 return f"endpoints[{name!r}].{opt_key} must be of type {expected}"
     return None
@@ -352,6 +353,7 @@ def _build_endpoints(payload: dict[str, Any], default_timeout: float) -> dict[st
             api_key=cfg.get("api_key"),
             timeout=float(cfg.get("timeout") if cfg.get("timeout") is not None else default_timeout),
             proxy=cfg.get("proxy"),
+            verify_ssl=cfg.get("verify_ssl", True),
         )
     return out
 
@@ -394,7 +396,7 @@ async def _handle_post_config(request: web.Request) -> web.Response:
 
     - Router-level: ``mode``, ``fuzzy_model``, ``fuzzy_sampling``,
       ``max_non_greedy_replies``, ``non_streaming_models``.
-    - Outflow-level: ``endpoints`` (mapping name → ``{url, api_key?, proxy?, timeout?}``),
+    - Outflow-level: ``endpoints`` (mapping name → ``{url, api_key?, proxy?, timeout?, verify_ssl?}``),
       ``models`` (ordered list of ``{pattern, endpoint}`` rules; ``endpoint``
       may be ``null`` to register an offline sentinel route).
 

@@ -28,6 +28,7 @@ class EndpointDef(BaseModel):
     api_key: str | None = Field(default=None, description="Optional Bearer token for authentication")
     proxy: str | None = Field(default=None, description="Optional HTTP proxy URL for upstream requests")
     timeout: float | None = Field(default=None, description="Per-endpoint upstream timeout in seconds; falls back to record_timeout")
+    verify_ssl: bool = Field(default=True, description="Whether to verify SSL certificates on upstream requests")
 
 
 class ModelRouteDef(BaseModel):

@@ -399,7 +399,7 @@ inference-gate cassette delete 6c72599f3142
 inference-gate cassette delete --model gpt-4
 
 # Delete all cassettes with an error response (non-200)
-inference-gate cassette delete --non-200
+inference-gate cassette delete --non-200 -c tests/cassettes
 
 # Non-interactive
 inference-gate cassette delete 6c72 --yes
@@ -649,11 +649,7 @@ inference-gate --config /path/to/config.yaml start
 # Server settings
 host: "127.0.0.1"          # Host to bind the server to
 port: 8080                  # Port to run the server on
-
-# Upstream API settings
-upstream: "https://api.openai.com"  # Upstream OpenAI API base URL
-# Note: api_key is NOT stored in the config file for security
-# Use the OPENAI_API_KEY environment variable instead
+record_timeout: 600.0       # Default upstream HTTP timeout in seconds
 
 # Storage settings
 cache_dir: ".inference_cache"  # Directory to store cached responses
@@ -661,9 +657,36 @@ cache_dir: ".inference_cache"  # Directory to store cached responses
 # Logging settings
 verbose: false              # Enable verbose (DEBUG) logging
 
+# Endpoints configuration (supports runtime override via POST /gate/config)
+endpoints:
+  default_upstream:
+    url: "https://api.openai.com"
+    # Note: api_key is NOT stored in the config file by default for security
+    verify_ssl: true  # Set to false to disable SSL verification on egress requests
+
+# Model routing rules
+models:
+  - pattern: "*"
+    endpoint: "default_upstream"
+
 # Test command settings
 test_model: "gpt-4o-mini"   # Default model for the test command
 test_prompt: "This is a test prompt..."  # Default prompt for the test command
+```
+
+### Runtime Configuration
+
+The server supports modifying settings at runtime via the `POST /gate/config` admin endpoint. You can dynamically push updates to the `endpoints`, `models`, and `mode` without restarting InferenceGate. For example, to disable SSL verification on an endpoint during a test session:
+
+```json
+{
+  "endpoints": {
+    "default_upstream": {
+      "url": "https://api.openai.com",
+      "verify_ssl": false
+    }
+  }
+}
 ```
 
 ### Configuration Priority

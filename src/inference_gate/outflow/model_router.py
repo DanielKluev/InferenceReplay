@@ -56,12 +56,13 @@ class EndpointConfig:
     api_key: str | None = None
     timeout: float = 120.0
     proxy: str | None = None
+    verify_ssl: bool = True
 
-    def dedup_key(self) -> tuple[str, str | None, str | None]:
+    def dedup_key(self) -> tuple[str, str | None, str | None, bool]:
         """
         Return the tuple used to dedupe equivalent endpoints to a single client.
         """
-        return (self.url.rstrip("/"), self.api_key, self.proxy)
+        return (self.url.rstrip("/"), self.api_key, self.proxy, self.verify_ssl)
 
 
 @dataclass
@@ -155,13 +156,13 @@ class OutflowRouter:
 
         # Build the deduplicated client pool keyed by EndpointConfig.dedup_key().
         # endpoint_name → (dedup_key, OutflowClient) so we can resolve quickly.
-        self._client_by_key: dict[tuple[str, str | None, str | None], OutflowClient] = {}
+        self._client_by_key: dict[tuple[str, str | None, str | None, bool], OutflowClient] = {}
         self._client_by_endpoint: dict[str, OutflowClient] = {}
         for name, cfg in self._endpoints.items():
             key = cfg.dedup_key()
             if key not in self._client_by_key:
                 self._client_by_key[key] = OutflowClient(upstream_base_url=cfg.url, api_key=cfg.api_key, timeout=cfg.timeout,
-                                                         proxy=cfg.proxy)
+                                                         proxy=cfg.proxy, verify_ssl=cfg.verify_ssl)
             self._client_by_endpoint[name] = self._client_by_key[key]
 
     @property

@@ -23,7 +23,7 @@ class OutflowClient:
     started and stopped via `start()` and `stop()`.
     """
 
-    def __init__(self, upstream_base_url: str, api_key: str | None = None, timeout: float = 120.0, proxy: str | None = None) -> None:
+    def __init__(self, upstream_base_url: str, api_key: str | None = None, timeout: float = 120.0, proxy: str | None = None, verify_ssl: bool = True) -> None:
         """
         Initialize the outflow client.
 
@@ -38,6 +38,7 @@ class OutflowClient:
         self.api_key = api_key
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.proxy = proxy
+        self.verify_ssl = verify_ssl
         self._session: aiohttp.ClientSession | None = None
 
     async def start(self) -> None:
@@ -127,6 +128,8 @@ class OutflowClient:
             kwargs["json"] = body
         if self.proxy:
             kwargs["proxy"] = self.proxy
+        if not self.verify_ssl:
+            kwargs["ssl"] = False
 
         async with session.request(method, url, **kwargs) as resp:
             response_headers = {k: v for k, v in resp.headers.items() if k.lower() in ("content-type",)}
@@ -152,6 +155,8 @@ class OutflowClient:
             kwargs["json"] = body
         if self.proxy:
             kwargs["proxy"] = self.proxy
+        if not self.verify_ssl:
+            kwargs["ssl"] = False
 
         chunks: list[str] = []
         async with session.request(method, url, **kwargs) as resp:
